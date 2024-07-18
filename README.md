@@ -64,12 +64,15 @@ pipenv run python3 lct.py -f ~/ReBound/data/02a00399-3857-444e-8db3-a8f58489c394
 
 Then you will see three windows
 
+![Image text](https://github.com/lisiyi777/ReBound/blob/main/Image/image_a.jpg)
 
 ### **Launch Editing Tool**
 
 Tools -> Add/Edit Annotations
 
-### **Edit**
+![Image text](https://github.com/lisiyi777/ReBound/blob/main/Image/image_b.jpg)
+
+# **Edit**
 
 **Space** - Toggle between boxes
 
