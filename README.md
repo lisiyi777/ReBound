@@ -69,7 +69,7 @@ Then you will see three windows
 
 Tools -> Add/Edit Annotations
 
-### **Edit**
+# **Edit**
 
 **Space** - Toggle between boxes
 
