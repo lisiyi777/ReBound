@@ -199,6 +199,7 @@ class Window:
         # Set up checkboxes for selecting predicted annotations
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
         self.pred_frames = len(frames_available) - 1
+        # self.pred_frames = 0
         self.pred_check_horiz = []
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
@@ -222,6 +223,8 @@ class Window:
                     self.pred_check_horiz.append(horiz)
         if self.pred_frames > 0:
             self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
+        else:
+            self.pred_boxes = []
 
         # Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()

@@ -1,3 +1,106 @@
+# Installation
+
+Linux is the preferred way to run our GUI
+
+### **Make sure you have Python 3.6-3.8**
+
+```bash
+python3 --version
+```
+
+### **Clone the repository**
+
+```bash
+git clone https://github.com/ajedgley/ReBound.git
+```
+
+### **Install dependencies**
+
+```bash
+//install pipenv
+pip install pipenv
+
+//Add bin to path to facilitate running pipenv
+export PATH=$PATH:/home/[your_username]/.local/bin/
+
+//Navigate to src directory
+cd Rebound/src
+
+//Finally, install dependencies
+pipenv install
+```
+
+# **Data preparation**
+
+### Bring argoverse dataset into our generic data format
+
+```bash
+pipenv run python3 argoverse-ct.py -f [data_path]/val -o [output_path]
+```
+
+Example
+
+```bash
+pipenv run python3 argoverse-ct.py -f ~/tmp/argoverse2_small/val -o ~/ReBound/data/
+```
+
+Then enter a comma-delineated list of scene names. Remove any whitespace.
+
+Or leave blank to convert all scenes.
+
+# **Ready to Label**
+
+### **Launch Rebound**
+
+```
+pipenv run python3 lct.py -f [scene_path]
+```
+
+Example
+
+```
+pipenv run python3 lct.py -f ~/ReBound/data/02a00399-3857-444e-8db3-a8f58489c394
+```
+
+Then you will see three windows
+
+
+### **Launch Editing Tool**
+
+Tools -> Add/Edit Annotations
+
+### **Edit**
+
+**Space** - Toggle between boxes
+
+**Ctrl+Space** - Toggle between boxes in the opposite direction
+
+
+
+**Arrow Keys** - Translate the selected box
+
+**W/S** - Translate box along the z-axis
+
+**A/D** - Rotate selected box
+
+**Ctrl + Arrow Keys/W/A/S/D** - fine-tune
+
+
+
+**Click** **"Save and Propagate Boxes to Next Frame"** 
+
+\- saves the current frame and propagates the current annotations to the next frame
+
+**Click** **"Set Velocity of Propagated Box"**
+
+\- save velocity based on the last two frames, boxes will propagate at that speed in the next frame
+
+**Click** **“Save changes”** 
+
+\- save changes without propagating
+
+
+
 # ReBound
 ## An Open-Source LiDAR Visualization and Annotation Tool
 

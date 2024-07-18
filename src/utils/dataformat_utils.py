@@ -19,6 +19,19 @@ ANNOTATION = 3
 CONFIDENCE = 4
 COLOR = 5
 
+annotation_filter = [
+    "BOLLARD",
+    "CONSTRUCTION_BARREL",
+    "CONSTRUCTION_CONE",
+    "MOBILE_PEDESTRIAN_CROSSING_SIGN",
+    "SIGN",
+    "STOP_SIGN",
+    "MESSAGE_BOARD_TRAILER",
+    "TRAFFIC_LIGHT_TRAILER",
+    ]
+
+DIST_THRESHOLD = 40.0
+
 def create_lct_directory(path, name):
     """Create top level LCT directory at specified path
     Args:
@@ -194,7 +207,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         if not predicted:
             box['id'] = ids[i]
             box['internal_pts'] = internal_points[i]
-        box['data'] = {'propagate': False}
+        box['data'] = {'propagate': True}
         if data:
             for k in data.keys():
                 box['data'][k] = data[k][i]
@@ -283,3 +296,121 @@ def print_progress_bar(frame_num, total):
     # After progress is complete run a new line
     if frame_num == total: 
         print()
+
+def create_blank_pred_bounding_directory(path, frame_num):   
+    """Adds blank box data for one frame in pred_bounding directory
+    Args:
+        path: path to LCT directory
+        frame_num: frame index (0-indexed) (will overwrite if duplicate frames are specified)
+    Returns:
+        None
+        """
+
+    # Create directory that stores the boxes in one frame
+    full_path = os.path.join(path, 'pred_bounding', str(frame_num))
+    os.makedirs(full_path, exist_ok=True)
+    
+    # Create description.json
+    description = {}
+    description['num_boxes'] = 0
+    description_path = os.path.join(full_path, 'description.json')
+    with open(description_path, 'w') as f:
+        json.dump(description, f)
+
+    # Creates boxes.json
+
+    json_name = 'boxes.json'
+    json_path = os.path.join(full_path, json_name)
+    box_data = {}
+    box_data['boxes'] = []
+
+    with open(json_path, 'w') as f:
+        json.dump(box_data, f)
+
+    
+def initialize_pre_bounding(path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, internal_points, prev_frame_boxes, center_coordinate, predicted=False, data=None):   
+    """Iitializes pred_box data for one frame
+    Args:
+        path: path to LCT directory
+        frame_num: frame index (0-indexed) (will overwrite if duplicate frames are specified)
+        origins: [n, 3] list representing x,y,z coordinates of the center of the boxes
+        sizes: [n, 3] list representing W,L,H of box
+        rotations:[n, 4] list of quaternions representing box rotation with respect to (0,0,0)
+        annotation_names: list of length n where every element is a string with the name of the bounding box
+        confidence: list of length n of integers where every element is a value from 0-100 representing the confidence percentage
+            should be 101 for ground truth.
+        origins, sizes, rotations, annotation_names, confidences should all be the same size
+        ids: corresponds to tracking ids or instance ids (represents a single object across different frames)
+        predicted: Optional argument that specifies that this data is predicted data
+        internal_points: the number of lidar points within the box
+        data: any additional data needed for exporting
+    Returns:
+        None
+        """
+
+    # Check that all lists are the same size
+    lengths = [len(origins), len(sizes), len(rotations), len(annotation_names), len(confidences)]
+    if lengths.count(len(origins)) != len(lengths):
+        print("Frame_Bounding_Directory(): Length of lists is not equal!")
+        sys.exit(2)
+
+    # Create directory that stores the boxes in one frame
+    full_path = os.path.join(path, 'pred_bounding', str(frame_num))
+    os.makedirs(full_path, exist_ok=True)
+    
+    # Create description.json
+    description = {}
+    description['num_boxes'] = len(origins)
+    description_path = os.path.join(full_path, 'description.json')
+    with open(description_path, 'w') as f:
+        json.dump(description, f)
+
+    # Creates JSON file that stores all the boxes in a frame 
+
+    json_name = 'boxes.json'
+    json_path = os.path.join(full_path, json_name)
+    box_data = {}
+    box_data['boxes'] = []
+
+    prev_frame_box_ids = {box['id'] for box in prev_frame_boxes['boxes']}
+
+    for i in range(0, len(origins)):
+        # skip for certain objects
+        if annotation_names[i] in annotation_filter:
+            continue
+        if np.linalg.norm(np.array(origins[i]) ) > DIST_THRESHOLD:
+        # if np.linalg.norm(np.array(origins[i]) - np.array(center_coordinate)) > DIST_THRESHOLD:
+            continue
+
+        if ids[i] in prev_frame_box_ids:
+            for prev_box in prev_frame_boxes['boxes']:
+                if ids[i] == prev_box['id']:
+                    box = {}
+                    box['origin'] = prev_box['origin']
+                    box['size'] = prev_box['size']
+                    box['rotation'] = prev_box['rotation']
+                    box['annotation'] = prev_box['annotation']
+                    box['confidence'] = prev_box['confidence']
+                    box['id'] = prev_box['id']
+                    box['data'] = {'propagate': True}
+                    if data:
+                        for k in data.keys():
+                            box['data'][k] = data[k][i]
+                    box_data['boxes'].append(box)
+        else:
+            box = {}
+            box['origin'] = origins[i]
+            box['size'] = sizes[i]
+            box['rotation'] = rotations[i]
+            box['annotation'] = annotation_names[i]
+            box['confidence'] = confidences[i]
+            box['id'] = ids[i]
+            box['data'] = {'propagate': True}
+            if data:
+                for k in data.keys():
+                    box['data'][k] = data[k][i]
+            box_data['boxes'].append(box)
+    with open(json_path, 'w') as f:
+        json.dump(box_data, f)
+
+    return box_data

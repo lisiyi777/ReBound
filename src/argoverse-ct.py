@@ -11,6 +11,8 @@ import sys
 from utils import dataformat_utils
 from pyquaternion import Quaternion
 
+
+
 # Name of all the cameras
 camera_list = ["ring_front_center",
                 "ring_front_left",
@@ -48,6 +50,7 @@ def parse_options():
         elif opt == "-f":
             input_path = arg
             input_string = input("Please enter a comma-delinated list of scene names. Remove any whitespace. To convert all scenes, leave blank.\n")
+            print("here")
             if len(input_string) != 0:
                 list_of_scenes = input_string.split(",")
                 scene_names.extend(list_of_scenes)
@@ -55,6 +58,7 @@ def parse_options():
             output_path = arg
         else:
             sys.exit(2)
+
 
     return (input_path, output_path, scene_names)        
 
@@ -109,8 +113,9 @@ def extract_ego(frame_num, timestamp, output_path, input_path):
     rotation = ego[["qw","qx","qy","qz"]].values[0].tolist()
     translation = ego[["tx_m","ty_m","tz_m"]].values[0].tolist()
     dataformat_utils.create_ego_directory(output_path, frame_num, translation, rotation)
+    return translation
 
-def extract_bounding(annotations, frame_num, timestamp, output_path):
+def extract_bounding(annotations, frame_num, timestamp, output_path, prev_frame_boxes, translation):
     ''' Extracts the bounding data from a nuScenes frame and converts it into our intermediate format
     Args:
         annotations: dataframe containing annotations
@@ -141,6 +146,10 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
         ids.append(annotation.track_uuid)
         internal_pts.append(annotation.num_interior_pts)
     dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, internal_pts)
+    # dataformat_utils.create_blank_pred_bounding_directory(output_path, frame_num)
+    prev_frame_boxes = dataformat_utils.initialize_pre_bounding(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, internal_pts, prev_frame_boxes, translation)
+    return prev_frame_boxes
+
 
 # Main method for converting datasets
 def convert_dataset(input_path, output_path):
@@ -182,13 +191,14 @@ def convert_dataset(input_path, output_path):
         frame_count += 1
     timestamps.sort()
     dataformat_utils.print_progress_bar(frame_num, frame_count)
-
+    prev_frame_boxes = {}
+    prev_frame_boxes['boxes'] = []
     # Loop through each frame
     for timestamp in timestamps:
         extract_rgb(frame_num, timestamp, output_path, input_path+"sensors/cameras/")
         extract_lidar(frame_num, timestamp, output_path, input_path+"sensors/lidar/")
-        extract_ego(frame_num, timestamp, output_path, input_path)
-        extract_bounding(annotations, frame_num, timestamp, output_path)
+        translation = extract_ego(frame_num, timestamp, output_path, input_path)
+        prev_frame_boxes = extract_bounding(annotations, frame_num, timestamp, output_path, prev_frame_boxes, translation)
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 

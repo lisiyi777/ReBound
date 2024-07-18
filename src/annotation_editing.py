@@ -58,6 +58,10 @@ class Annotation:
 		self.volumes_in_scene = [] 					#current clickable cube volume objects in scene
 		self.color_map = color_map
 		self.pred_color_map = pred_color_map
+		#used for initialization when no pred_boxes provided
+		self.boxes_global_frame = []
+
+		
 
 		self.frame_num = frame_num
 		self.camera_sensors = camera_sensors
@@ -111,7 +115,7 @@ class Annotation:
 		self.curr_y = 0.0
 		self.ctrl_is_down = False
 		self.nudge_sensitivity = 1.0
-		
+		self.fine_tune_sensitivity = 0.15
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
 		self.temp_pred_boxes = pred_boxes.copy()
@@ -143,11 +147,11 @@ class Annotation:
 		frame_switch_layout.add_child(self.frame_select)
 
 		# button to center pointcloud view on vehicle
-		center_horiz = gui.Horiz()
-		center_view_button = gui.Button("Center Pointcloud View on Vehicle")
-		center_view_button.set_on_clicked(self.jump_to_vehicle)
-		#center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
-		center_horiz.add_child(center_view_button)
+		# center_horiz = gui.Horiz()
+		# center_view_button = gui.Button("Center Pointcloud View on Vehicle")
+		# center_view_button.set_on_clicked(self.jump_to_vehicle)
+		# #center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
+		# center_horiz.add_child(center_view_button)
 
 		self.label_list = []
 
@@ -185,14 +189,15 @@ class Annotation:
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
 		save_and_prop_horiz = gui.Horiz(0.50 * em, margin)
-		save_and_prop_button = gui.Button("Save and Propagate New Boxes to Next Frame")
+		save_and_prop_button = gui.Button("Save and Propagate Boxes to Next Frame")
 		save_and_prop_to_next = functools.partial(self.save_and_propagate)
 		save_and_prop_button.set_on_clicked(save_and_prop_to_next)
 		set_velocity_horiz = gui.Horiz(0.50 * em, margin)
 		set_velocity_button = gui.Button("Set Velocity of Propagated Box")
 		set_velocity_button.set_on_clicked(self.set_velocity)
 		set_velocity_label_vert = gui.Vert(1 * em, margin)
-		set_velocity_label = gui.Label("(Box must be selected)")
+		set_velocity_label = gui.Label("")
+		# set_velocity_label = gui.Label("(Box must be selected)")
 		set_velocity_label_vert.add_child(set_velocity_label)
 
 
@@ -368,7 +373,7 @@ class Annotation:
 		# adding all of the horiz to the vert, in order
 		layout.add_child(save_annotation_vert)
 		layout.add_child(frame_switch_layout)
-		layout.add_child(center_horiz)
+		# layout.add_child(center_horiz)
 		# layout.add_child(confidence_select_layout)
 		layout.add_child(bounding_toggle_layout)
 		layout.add_child(add_remove_vert)
@@ -410,7 +415,8 @@ class Annotation:
 		# Random values are placeholders until we implement the desired values
 		qtr = Quaternion(axis=(1.0,0.0,0.0), degrees=0) #Randomized rotation of box
 		origin = self.get_center_of_rotation()
-		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
+		# size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
+		size = self.old_boxes['boxes'][1]['size']
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 		vol_size = [bbox_params[1][1], bbox_params[1][0], bbox_params[1][2]]
 		vol_params = [origin, vol_size, qtr.rotation_matrix]
@@ -418,7 +424,9 @@ class Annotation:
 		if self.show_gt:
 			color = self.color_map[self.all_gt_annotations[0]]
 		else:
-			color = self.pred_color_map[self.all_pred_annotations[0]]
+			# color = self.pred_color_map[self.all_pred_annotations[0]]
+			color = self.pred_color_map[self.old_boxes['boxes'][1]['annotation']]
+
 		hex = '#%02x%02x%02x' % color
 		bounding_box.color = matplotlib.colors.to_rgb(hex) #will select color from annotation type list
 		bbox_name = "bbox_" + str(self.box_count)
@@ -450,7 +458,7 @@ class Annotation:
 		else:
 			# uuid_str = str(uuid.uuid4())
 			uuid_str = secrets.token_hex(16)
-			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101,
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.old_boxes['boxes'][1]['annotation'], 101,
 				  						   uuid_str, 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
@@ -514,6 +522,7 @@ class Annotation:
 					closest_index = boxes.index(closest_box) #get the array position of closest_box
 					self.box_selected = self.box_indices[closest_index]
 					self.select_box(closest_index) #select the nearest box
+					self.box_selected = self.box_indices[closest_index]
 
 			widget.scene.scene.render_to_depth_image(get_depth)
 			return gui.Widget.EventCallbackResult.HANDLED
@@ -582,42 +591,76 @@ class Annotation:
 			return gui.Widget.EventCallbackResult.HANDLED
 
 		elif event.type == event.Type.DOWN:
-
+			# DELETE
 			if event.key == 127:
 				self.delete_annotation()
 				return gui.Widget.EventCallbackResult.CONSUMED
 			elif event.key == 100 and self.ctrl_is_down:
 				self.deselect_box()
 				return gui.Widget.EventCallbackResult.CONSUMED
+			# SPACE
+			elif event.key == 32:
+				if self.ctrl_is_down:
+					self.select_next_box(reverse=1)
+				else:
+					self.select_next_box(reverse=-1)
 			elif self.previous_index != -1:
+				# W
 				if event.key == 119:
-					z_location = self.box_props_selected[2] + self.nudge_sensitivity
+					if self.ctrl_is_down:
+						z_location = self.box_props_selected[2] + self.nudge_sensitivity * self.fine_tune_sensitivity
+					else:
+						z_location = self.box_props_selected[2] + self.nudge_sensitivity
 					self.property_change_handler(z_location, "trans", "z")
 					return gui.Widget.EventCallbackResult.CONSUMED
+				# S
 				elif event.key == 115:
-					z_location = self.box_props_selected[2] + (-1 * self.nudge_sensitivity)
+					if self.ctrl_is_down:
+						z_location = self.box_props_selected[2] + (-1 * self.nudge_sensitivity)* self.fine_tune_sensitivity
+					else:
+						z_location = self.box_props_selected[2] + (-1 * self.nudge_sensitivity)
 					self.property_change_handler(z_location, "trans", "z")
 					return gui.Widget.EventCallbackResult.CONSUMED
+				# A
 				elif event.key == 97:
-					self.property_change_handler(self.nudge_sensitivity, "rot", "z")
+					if self.ctrl_is_down:
+						self.property_change_handler(self.nudge_sensitivity * self.fine_tune_sensitivity, "rot", "z")
+					else:
+						self.property_change_handler(self.nudge_sensitivity, "rot", "z")
 					return gui.Widget.EventCallbackResult.CONSUMED
+				# D
 				elif event.key == 100:
-					self.property_change_handler(-1 * self.nudge_sensitivity, "rot", "z")
+					if self.ctrl_is_down:
+						self.property_change_handler(-1 * self.nudge_sensitivity * self.fine_tune_sensitivity, "rot", "z")
+					else:
+						self.property_change_handler(-1 * self.nudge_sensitivity, "rot", "z")
 					return gui.Widget.EventCallbackResult.CONSUMED
-				elif event.key == 265:
-					y_location = self.box_props_selected[1] + self.nudge_sensitivity
-					self.property_change_handler(y_location, "trans", "y")
-					return gui.Widget.EventCallbackResult.CONSUMED
-				elif event.key == 266:
-					y_location = self.box_props_selected[1] + (-1 * self.nudge_sensitivity)
+				elif event.key == 264:
+					if self.ctrl_is_down:
+						y_location = self.box_props_selected[1] - self.nudge_sensitivity * self.fine_tune_sensitivity
+					else:
+						y_location = self.box_props_selected[1] - self.nudge_sensitivity
 					self.property_change_handler(y_location, "trans", "y")
 					return gui.Widget.EventCallbackResult.CONSUMED
 				elif event.key == 263:
-					x_location = self.box_props_selected[0] + self.nudge_sensitivity
+					if self.ctrl_is_down:
+						y_location = self.box_props_selected[1] + (1 * self.nudge_sensitivity) * self.fine_tune_sensitivity
+					else:
+						y_location = self.box_props_selected[1] + (1 * self.nudge_sensitivity)
+					self.property_change_handler(y_location, "trans", "y")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 266:
+					if self.ctrl_is_down:
+						x_location = self.box_props_selected[0] - self.nudge_sensitivity * self.fine_tune_sensitivity
+					else:
+						x_location = self.box_props_selected[0] - self.nudge_sensitivity
 					self.property_change_handler(x_location, "trans", "x")
 					return gui.Widget.EventCallbackResult.CONSUMED
-				elif event.key == 264:
-					x_location = self.box_props_selected[0] + (-1 * self.nudge_sensitivity)
+				elif event.key == 265:
+					if self.ctrl_is_down:
+						x_location = self.box_props_selected[0] + (1 * self.nudge_sensitivity) * self.fine_tune_sensitivity
+					else:
+						x_location = self.box_props_selected[0] + (1 * self.nudge_sensitivity)
 					self.property_change_handler(x_location, "trans", "x")
 					return gui.Widget.EventCallbackResult.CONSUMED
 
@@ -648,7 +691,6 @@ class Annotation:
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
 			self.deselect_box()
 			# self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
-
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
 		self.current_confidence = self.temp_pred_boxes["boxes"][box_index]["confidence"]
@@ -813,11 +855,11 @@ class Annotation:
 				result.elements,
 				current_temp_box["annotation"],
 				current_temp_box["confidence"],
-				"",
+				current_temp_box["id"],
 				0,
 				current_temp_box["data"]
 			)
-			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata		
+			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
 	#redirects on_value_changed events to appropriate box transformation function
@@ -988,15 +1030,50 @@ class Annotation:
 	#Reads the Z values for the center of all boxes and averages them
 	#Helper function for placing new boxes around the same level as the road
 	def get_depth_average(self):
+
+		if self.box_count == 0:
+			return self.initialize_pred_annotation()
+		else:
+			z_total = 0
+			for box in self.boxes_in_scene:
+				box_origin = box.get_center()
+				z_total += box_origin[2]
+
+			return z_total/self.box_count
+
+
+	def initialize_pred_annotation(self):
+		#keep the annotations but change the colors
+		self.pred_color_map = {key:tuple(255 - value for value in values) for key, values in self.color_map.items()}
+		self.all_pred_annotations = list(self.pred_color_map.keys())
+
+		gt_boxes_count = 0
 		z_total = 0
-		for box in self.boxes_in_scene:
-			box_origin = box.get_center()
+		for box in self.old_boxes['boxes']:
+			size = [0,0,0]
+            # Open3D wants sizes in L,W,H
+			size[0] = box['size'][1]
+			size[1] = box['size'][0]
+			size[2] = box['size'][2]
+			color = self.pred_color_map[box['annotation']]
+			bounding_box = o3d.geometry.OrientedBoundingBox(box['origin'], Quaternion(box['rotation']).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+			bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+			self.boxes_global_frame.append(bounding_box)
+			box_origin = bounding_box.get_center()
 			z_total += box_origin[2]
-		return z_total/self.box_count
+			gt_boxes_count += 1
+		return z_total/gt_boxes_count
+
+
+
 
 	#Extracts the current data for a selected bounding box
 	#returns it as a json object for use in save and export functions
-	def create_box_metadata(self, origin, size, rotation, label, confidence, ids, internal_pts, data):
+	def create_box_metadata(self, origin, size, rotation, label, confidence, ids, internal_pts, data, is_gt = False):
 		if isinstance(origin, np.ndarray):
 			origin = origin.tolist()
 		if isinstance(size, np.ndarray):
@@ -1004,7 +1081,7 @@ class Annotation:
 		if isinstance(rotation, np.ndarray):
 			rotation = rotation.tolist()
 
-		if self.show_pred:
+		if self.show_pred and not is_gt:
 			return {
 				"origin": origin,
 				"size": size,
@@ -1348,10 +1425,10 @@ class Annotation:
 		self.save_check = 1
 		self.cw.close_dialog()
 		# check current annotation type and save to appropriate folder
-		for box in self.temp_boxes["boxes"]:
-			box["data"]["propagate"] = False
-		for box in self.temp_pred_boxes["boxes"]:
-			box["data"]["propagate"] = False
+		# for box in self.temp_boxes["boxes"]:
+		# 	box["data"]["propagate"] = False
+		# for box in self.temp_pred_boxes["boxes"]:
+		# 	box["data"]["propagate"] = False
 		if self.show_gt and not self.show_pred:
 			path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
 			boxes_to_save = {"boxes": [box for box in self.temp_boxes["boxes"]]}
@@ -1371,30 +1448,19 @@ class Annotation:
 
 	def save_and_propagate(self):
 		# propagates changes to the next frame
-		old_gt_boxes_path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
-		old_pred_boxes_path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
+		# old_gt_boxes_path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+		# old_pred_boxes_path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
 
-		old_pred_boxes = json.load(open(old_pred_boxes_path))
-		old_gt_boxes = json.load(open(old_gt_boxes_path))
-
-		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if (box not in old_gt_boxes["boxes"] and box["data"]["propagate"]==True)]
-		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if (box not in old_pred_boxes["boxes"] and box["data"]["propagate"]==True)]
-
-		prev_gt_boxes = [box for box in old_gt_boxes["boxes"] if box not in self.temp_boxes["boxes"]]
-		prev_pred_boxes = [box for box in old_pred_boxes["boxes"] if box not in self.temp_pred_boxes["boxes"]]
+		# old_pred_boxes = json.load(open(old_pred_boxes_path))
+		# old_gt_boxes = json.load(open(old_gt_boxes_path))
 
 
 		self.save_changes_to_json()
 
-		for box in new_gt_boxes:
-			box["data"]["propagate"] = True
-		for box in new_pred_boxes:
-			box["data"]["propagate"] = True
-
 		global_new_gt_boxes = []
 
 		# Transform boxes to global frame
-		for box in new_gt_boxes:
+		for box in self.temp_boxes["boxes"]:
 			size = [0,0,0]
 			# Open3D wants sizes in L,W,H
 			size[0] = box["size"][1]
@@ -1406,14 +1472,14 @@ class Annotation:
 			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
 			
 			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
-												  box["confidence"], box["id"], box["internal_pts"], box["data"])
+												  box["confidence"], box["id"], box["internal_pts"], box["data"], True)
 
 			global_new_gt_boxes.append(global_box)
 		
 		global_new_pred_boxes = []
 
 		# Transform boxes to global frame
-		for box in new_pred_boxes:
+		for box in self.temp_pred_boxes["boxes"]:
 			size = [0,0,0]
 			# Open3D wants sizes in L,W,H
 			size[0] = box["size"][1]
@@ -1425,7 +1491,7 @@ class Annotation:
 			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
 			
 			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
-												  box["confidence"], "", 0, box["data"])
+												  box["confidence"], box["id"], 0, box["data"])
 
 			global_new_pred_boxes.append(global_box)
 
@@ -1448,6 +1514,9 @@ class Annotation:
 
 			if self.source_format == "nuScenes":
 				delta_time = 0.5 # TODO: add other datasets
+			else:
+				delta_time = 0.5
+
 
 			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
 
@@ -1459,7 +1528,7 @@ class Annotation:
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
 			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], box["id"],
-				      						   box["internal_pts"], box["data"])
+				      						  box["internal_pts"], box["data"], True)
 			
 			ego_box['data']['prev_origin'] = box["origin"] # stores the current origin in the global frame
 			
@@ -1479,6 +1548,8 @@ class Annotation:
 
 			if self.source_format == "nuScenes":
 				delta_time = 0.5 # TODO: add other datasets
+			else:
+				delta_time = 0.5
 
 			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
 
@@ -1489,7 +1560,7 @@ class Annotation:
 			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], box["id"], 0, box["data"])
 			ego_box['data']['prev_origin'] = box['origin'] # stores the previous origin in the global frame
 			
 			self.propagated_pred_boxes.append(ego_box)
@@ -1498,47 +1569,89 @@ class Annotation:
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
 
+
+	# def set_velocity(self):
+	# 	# set the velocity based on the difference in coordinates between the current and previous frame
+	# 	current_id = self.previous_index
+	# 	if current_id == -1:
+	# 		return
+		
+	# 	if self.show_gt:
+	# 		current_box = self.temp_boxes["boxes"][current_id]
+	# 	else:
+	# 		current_box = self.temp_pred_boxes["boxes"][current_id]
+
+	# 	try: 
+	# 		if current_box["data"]["prev_origin"] == None:
+	# 			return
+			
+	# 	except KeyError:
+	# 		print("ERROR: no prev origin")
+	# 		return
+
+	# 	prev_global_origin = current_box["data"]["prev_origin"]
+	# 	# convert current origin to global frame
+	# 	size = [0,0,0]
+	# 	# Open3D wants sizes in L,W,H
+	# 	size[0] = current_box["size"][1]
+	# 	size[1] = current_box["size"][0]
+	# 	size[2] = current_box["size"][2]
+	# 	bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
+	# 	bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+	# 	bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+
+	# 	delta_pos = bounding_box.center - prev_global_origin
+	# 	# assuming that the prev_origin is from the previous frame
+		
+	# 	if self.source_format == "nuScenes":
+	# 		delta_time = 0.5
+	# 	else:
+	# 		delta_time = 0.5
+	# 	# TODO: add other datasets
+
+	# 	velocity = delta_pos / delta_time
+
+	# 	current_box["data"]["velocity"] = velocity.tolist()
+		
 	def set_velocity(self):
 		# set the velocity based on the difference in coordinates between the current and previous frame
-		current_id = self.previous_index
-		if current_id == -1:
-			return
 		
-		if self.show_gt:
-			current_box = self.temp_boxes["boxes"][current_id]
-		else:
-			current_box = self.temp_pred_boxes["boxes"][current_id]
+		
+		for	current_box in self.temp_pred_boxes["boxes"]:
 
-		try: 
-			if current_box["data"]["prev_origin"] == None:
+			try: 
+				if current_box["data"]["prev_origin"] == None:
+					exit
+				
+			except KeyError:
+				print("ERROR: no prev origin")
 				return
+
+			prev_global_origin = current_box["data"]["prev_origin"]
+			# convert current origin to global frame
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = current_box["size"][1]
+			size[1] = current_box["size"][0]
+			size[2] = current_box["size"][2]
+			bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+
+			delta_pos = bounding_box.center - prev_global_origin
+			# assuming that the prev_origin is from the previous frame
 			
-		except KeyError:
-			print("ERROR: no prev origin")
-			return
+			if self.source_format == "nuScenes":
+				delta_time = 0.5
+			else:
+				delta_time = 0.5
+			# TODO: add other datasets
 
-		prev_global_origin = current_box["data"]["prev_origin"]
-		# convert current origin to global frame
-		size = [0,0,0]
-		# Open3D wants sizes in L,W,H
-		size[0] = current_box["size"][1]
-		size[1] = current_box["size"][0]
-		size[2] = current_box["size"][2]
-		bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
-		bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-		bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			velocity = delta_pos / delta_time
 
-		delta_pos = bounding_box.center - prev_global_origin
-		# assuming that the prev_origin is from the previous frame
-		
-		if self.source_format == "nuScenes":
-			delta_time = 0.5
-		# TODO: add other datasets
+			current_box["data"]["velocity"] = velocity.tolist()
 
-		velocity = delta_pos / delta_time
 
-		current_box["data"]["velocity"] = velocity.tolist()
-		
 	def show_trajectory(self, bool_value):
 		# Load the annotations of this object from previous and next frames
 		if bool_value == False:
@@ -1771,10 +1884,35 @@ class Annotation:
 		#
 		self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
 		self.temp_boxes = self.boxes.copy()
-		self.temp_boxes["boxes"].extend(self.propagated_gt_boxes)
+		# self.temp_boxes["boxes"].extend(self.propagated_gt_boxes)
+
+		gt_id_set = {box['id'] for box in self.temp_boxes["boxes"]}
+
+		for propagated_box in self.propagated_gt_boxes:
+
+			if propagated_box ["id"] in gt_id_set:
+				for i, current_box in enumerate(self.temp_boxes["boxes"]):
+					if current_box["id"] == propagated_box["id"]:
+						self.temp_boxes["boxes"][i] = propagated_box
+			else:
+				self.temp_boxes["boxes"].append(propagated_box)
+				gt_id_set.add(propagated_box['id'])
+
 		self.pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(self.frame_num), "boxes.json")))
 		self.temp_pred_boxes = self.pred_boxes.copy()
-		self.temp_pred_boxes["boxes"].extend(self.propagated_pred_boxes)
+		# self.temp_pred_boxes["boxes"].extend(self.propagated_pred_boxes)
+		id_set = {box['id'] for box in self.temp_pred_boxes["boxes"]}
+
+		for propagated_box in self.propagated_pred_boxes:
+
+			if propagated_box ["id"] in id_set:
+				for i, current_box in enumerate(self.temp_pred_boxes["boxes"]):
+					if current_box["id"] == propagated_box["id"]:
+						self.temp_pred_boxes["boxes"][i] = propagated_box
+			else:
+				self.temp_pred_boxes["boxes"].append(propagated_box)
+				id_set.add(propagated_box['id'])
+
 
 		self.propagated_gt_boxes = [] #reset propagated boxes
 		self.propagated_pred_boxes = []
@@ -1846,3 +1984,30 @@ class Annotation:
 		self.update_image_path()
 		self.update_pointcloud()
 
+
+
+	def select_next_box(self, reverse):
+		# check current selected box
+		if self.box_selected is None:
+			self.box_selected = self.box_indices[0]
+			self.select_box(0) #select the nearest box
+			self.box_selected = self.box_indices[0]
+			return
+		else:
+			current_x = self.temp_pred_boxes['boxes'][self.previous_index]['origin'][0]
+		
+		# form a list of current boxes, sorted by x coordinates
+		x_set = {box['origin'][0] for box in self.temp_pred_boxes['boxes']}
+		x_coord_list = sorted(list(x_set))
+
+		# find the current position, get the next one
+		for i, x in enumerate(x_coord_list):
+			if  current_x == x:
+				next_x = x_coord_list[(i+reverse*1)%len(x_coord_list)]
+		for i, box in enumerate(self.temp_pred_boxes['boxes']):
+			if box['origin'][0] == next_x:
+				next_index = i 
+
+		self.box_selected = self.box_indices[next_index]
+		self.select_box(next_index)
+		self.box_selected = self.box_indices[next_index]
