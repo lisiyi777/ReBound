@@ -115,7 +115,7 @@ class Annotation:
 		self.curr_y = 0.0
 		self.ctrl_is_down = False
 		self.nudge_sensitivity = 1.0
-		self.fine_tune_sensitivity = 0.15
+		self.fine_tune_sensitivity = 0.1
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
 		self.temp_pred_boxes = pred_boxes.copy()
@@ -147,11 +147,11 @@ class Annotation:
 		frame_switch_layout.add_child(self.frame_select)
 
 		# button to center pointcloud view on vehicle
-		# center_horiz = gui.Horiz()
-		# center_view_button = gui.Button("Center Pointcloud View on Vehicle")
-		# center_view_button.set_on_clicked(self.jump_to_vehicle)
-		# #center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
-		# center_horiz.add_child(center_view_button)
+		center_horiz = gui.Horiz()
+		center_view_button = gui.Button("Center Pointcloud View on Vehicle")
+		center_view_button.set_on_clicked(self.jump_to_vehicle)
+		# center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
+		center_horiz.add_child(center_view_button)
 
 		self.label_list = []
 
@@ -192,20 +192,19 @@ class Annotation:
 		save_and_prop_button = gui.Button("Save and Propagate Boxes to Next Frame")
 		save_and_prop_to_next = functools.partial(self.save_and_propagate)
 		save_and_prop_button.set_on_clicked(save_and_prop_to_next)
+
+
+		self.if_save_velocity = False
 		set_velocity_horiz = gui.Horiz(0.50 * em, margin)
-		set_velocity_button = gui.Button("Set Velocity of Propagated Box")
-		set_velocity_button.set_on_clicked(self.set_velocity)
-		set_velocity_label_vert = gui.Vert(1 * em, margin)
-		set_velocity_label = gui.Label("")
-		# set_velocity_label = gui.Label("(Box must be selected)")
-		set_velocity_label_vert.add_child(set_velocity_label)
+		box_velocity_checkbox = gui.Checkbox("Set Velocity")
+		box_velocity_checkbox.set_on_checked(self.save_velocity)
+		box_velocity_checkbox.enabled = True
+		set_velocity_horiz.add_child(box_velocity_checkbox)
 
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
 		save_and_prop_horiz.add_child(save_and_prop_button)
-		set_velocity_horiz.add_child(set_velocity_button)
-		set_velocity_horiz.add_child(set_velocity_label_vert)
 		save_annotation_vert.add_child(save_annotation_horiz)
 		save_annotation_vert.add_child(save_and_prop_horiz)
 		save_annotation_vert.add_child(set_velocity_horiz)
@@ -373,7 +372,7 @@ class Annotation:
 		# adding all of the horiz to the vert, in order
 		layout.add_child(save_annotation_vert)
 		layout.add_child(frame_switch_layout)
-		# layout.add_child(center_horiz)
+		layout.add_child(center_horiz)
 		# layout.add_child(confidence_select_layout)
 		layout.add_child(bounding_toggle_layout)
 		layout.add_child(add_remove_vert)
@@ -523,6 +522,7 @@ class Annotation:
 					self.box_selected = self.box_indices[closest_index]
 					self.select_box(closest_index) #select the nearest box
 					self.box_selected = self.box_indices[closest_index]
+					self.update_props()
 
 			widget.scene.scene.render_to_depth_image(get_depth)
 			return gui.Widget.EventCallbackResult.HANDLED
@@ -591,6 +591,9 @@ class Annotation:
 			return gui.Widget.EventCallbackResult.HANDLED
 
 		elif event.type == event.Type.DOWN:
+			# ENTER
+			if event.key == 10:
+				self.save_and_propagate()
 			# DELETE
 			if event.key == 127:
 				self.delete_annotation()
@@ -604,6 +607,7 @@ class Annotation:
 					self.select_next_box(reverse=1)
 				else:
 					self.select_next_box(reverse=-1)
+				self.jump_to_vehicle()
 			elif self.previous_index != -1:
 				# W
 				if event.key == 119:
@@ -1334,15 +1338,17 @@ class Annotation:
 			self.previous_index = -1
 			self.update()
 	
+
 	def jump_to_vehicle(self):
 		bounds = self.scene_widget.scene.bounding_box
 		self.scene_widget.setup_camera(10, bounds, self.frame_extrinsic['translation'])
 		eye = [0,0,0]
-		eye[0] = self.frame_extrinsic['translation'][0]
-		eye[1] = self.frame_extrinsic['translation'][1]
+		box_object = self.boxes_in_scene[self.previous_index]
+		eye[0] = box_object.center[0]
+		eye[1] = box_object.center[1]
 		eye[2] = 150.0
-		self.scene_widget.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
-		self.update()
+		self.scene_widget.scene.camera.look_at(box_object.center, eye, [1, 0, 0])
+		# self.update_pointcloud()
 
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
@@ -1446,6 +1452,9 @@ class Annotation:
 		file_dialog.set_on_done(self.save_changes_to_json)
 		self.cw.show_dialog(file_dialog)
 
+	def save_velocity(self, bool_value):
+		self.if_save_velocity = bool_value
+
 	def save_and_propagate(self):
 		# propagates changes to the next frame
 		# old_gt_boxes_path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
@@ -1453,7 +1462,8 @@ class Annotation:
 
 		# old_pred_boxes = json.load(open(old_pred_boxes_path))
 		# old_gt_boxes = json.load(open(old_gt_boxes_path))
-
+		if self.if_save_velocity is True:
+			self.set_velocity()
 
 		self.save_changes_to_json()
 
@@ -1569,49 +1579,6 @@ class Annotation:
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
 
-
-	# def set_velocity(self):
-	# 	# set the velocity based on the difference in coordinates between the current and previous frame
-	# 	current_id = self.previous_index
-	# 	if current_id == -1:
-	# 		return
-		
-	# 	if self.show_gt:
-	# 		current_box = self.temp_boxes["boxes"][current_id]
-	# 	else:
-	# 		current_box = self.temp_pred_boxes["boxes"][current_id]
-
-	# 	try: 
-	# 		if current_box["data"]["prev_origin"] == None:
-	# 			return
-			
-	# 	except KeyError:
-	# 		print("ERROR: no prev origin")
-	# 		return
-
-	# 	prev_global_origin = current_box["data"]["prev_origin"]
-	# 	# convert current origin to global frame
-	# 	size = [0,0,0]
-	# 	# Open3D wants sizes in L,W,H
-	# 	size[0] = current_box["size"][1]
-	# 	size[1] = current_box["size"][0]
-	# 	size[2] = current_box["size"][2]
-	# 	bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
-	# 	bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-	# 	bounding_box.translate(np.array(self.frame_extrinsic['translation']))
-
-	# 	delta_pos = bounding_box.center - prev_global_origin
-	# 	# assuming that the prev_origin is from the previous frame
-		
-	# 	if self.source_format == "nuScenes":
-	# 		delta_time = 0.5
-	# 	else:
-	# 		delta_time = 0.5
-	# 	# TODO: add other datasets
-
-	# 	velocity = delta_pos / delta_time
-
-	# 	current_box["data"]["velocity"] = velocity.tolist()
 		
 	def set_velocity(self):
 		# set the velocity based on the difference in coordinates between the current and previous frame
@@ -2011,3 +1978,4 @@ class Annotation:
 		self.box_selected = self.box_indices[next_index]
 		self.select_box(next_index)
 		self.box_selected = self.box_indices[next_index]
+		self.update_props()

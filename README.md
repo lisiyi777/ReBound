@@ -87,11 +87,11 @@ Tools -> Add/Edit Annotations
 
 
 
-**Click** **"Save and Propagate Boxes to Next Frame"** 
+**Enter or Click** **"Save and Propagate Boxes to Next Frame"** 
 
 \- saves the current frame and propagates the current annotations to the next frame
 
-**Click** **"Set Velocity of Propagated Box"**
+**Click** **"Set Velocity"**
 
 \- save velocity based on the last two frames, boxes will propagate at that speed in the next frame
 

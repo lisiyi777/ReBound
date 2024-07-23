@@ -21,8 +21,9 @@ camera_list = ["ring_front_center",
                 "ring_rear_right",
                 "ring_side_left",
                 "ring_side_right",
-                "stereo_front_left",
-                "stereo_front_right"]
+                # "stereo_front_left",
+                # "stereo_front_right"
+                ]
 
 def parse_options():
     ''' Read in user command line input to get directory paths which will be used for input and output.

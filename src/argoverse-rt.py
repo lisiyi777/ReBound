@@ -63,7 +63,7 @@ def export_annotations(input_path, output_path):
 
     # Setup progress bar
     frame_count = 0
-    for d in os.scandir(input_path + "bounding/"):
+    for d in os.scandir(input_path + "pred_bounding/"):
         res = re.match(r"\d+",d.name)
         if d.is_dir() and res:
             frame_count += 1
@@ -73,7 +73,7 @@ def export_annotations(input_path, output_path):
     with open(input_path + "timestamps.json") as f:
         timestamps = json.load(f)["timestamps"]
 
-    bounding_path = input_path + 'bounding'
+    bounding_path = input_path + 'pred_bounding'
 
     row_list = []
 
@@ -102,7 +102,7 @@ def export_annotations(input_path, output_path):
                 "tx_m": box["origin"][0],
                 "ty_m": box["origin"][1],
                 "tz_m": box["origin"][2],
-                "num_interior_pts": box["internal_pts"],
+                # "num_interior_pts": box["internal_pts"],
             })
         
         frame_num += 1
