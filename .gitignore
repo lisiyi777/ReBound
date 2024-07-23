@@ -1,7 +1,6 @@
-Prototype/data/
-Prototype/.v1.0-mini.tgz
-Prototype/v1.0-mini.tgz
+**/__pycache__/
+docker_history.txt
+Prototype/*
+Output/*
 nicks_script.py
-Output/
-src/utils/__pycache__/
-src/__pycache__
+datasets/
